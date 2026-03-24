@@ -30,12 +30,21 @@ VALID_CATEGORIES = []
 
 
 def load_valid_categories() -> List[str]:
-    """Load valid categories from CATEGORIES.md."""
-    categories_file = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "CATEGORIES.md"
-    )
-    if not os.path.isfile(categories_file):
+    """Load valid categories from CATEGORIES.md.
+    Checks multiple locations: the skill's references/ directory and the
+    nova-rules repo root (parent of the scripts directory).
+    """
+    skill_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates = [
+        os.path.join(skill_root, "references", "CATEGORIES.md"),
+        os.path.join(skill_root, "CATEGORIES.md"),
+    ]
+    categories_file = None
+    for path in candidates:
+        if os.path.isfile(path):
+            categories_file = path
+            break
+    if not categories_file:
         return []
 
     categories = []

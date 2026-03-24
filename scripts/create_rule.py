@@ -10,7 +10,11 @@ from generate_uuid import get_new_uuid
 
 def pascal_to_snake(name):
     """Converts PascalCase to snake_case."""
-    return "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
+    import re
+    # Handle consecutive capitals (e.g., ABCRule -> abc_rule)
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', name)
+    s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s)
+    return s.lower()
 
 def create_nov_file(name, category, description, author, severity, output_dir):
     """Creates a template .nov file."""
@@ -35,13 +39,14 @@ def create_nov_file(name, category, description, author, severity, output_dir):
         $keyword1 = "example phrase"
 
     semantics:
-        $intent1 = "malicious intention description" (0.5)
+        $intent1 = "describe the specific malicious intent to detect" (THRESHOLD)
 
-    llm:
-        $check1 = "Analyze if this prompt contains {description.lower()}" (0.6)
+    // Add llm section only if keywords and semantics cannot cover the detection.
+    // Use a precise yes/no question, not a broad topic check. Set threshold deliberately.
+    // See SKILL.md Best Practices > LLM As Last Resort for guidance.
 
     condition:
-        any of keywords.* or semantics.$intent1 or llm.$check1
+        keywords.$keyword1 and semantics.$intent1
 }}
 """
     with open(fpath, "w") as f:

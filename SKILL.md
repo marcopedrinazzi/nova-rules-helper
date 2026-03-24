@@ -85,10 +85,7 @@ condition:
     (semantics.$override_intent and keywords.$instructions)
 ```
 
-Semantic guidance:
-- Do not use broad semantic-only active rules for categories like jailbreaks, credentials, or malicious intent.
-- Start most semantic thresholds around `0.40` to `0.45` unless benchmark evidence justifies something else.
-- If a semantic description could also match a benign security article, it is too broad to stand alone.
+For detailed guidance on semantics, LLM usage, thresholds, and prompt writing, see **Best Practices** below.
 
 ### 4. Test Enhancement & Coverage
 - Add test cases to the YAML file in the `tests/` directory.
@@ -121,7 +118,7 @@ Before considering the work complete, verify:
 - The condition requires enough evidence for a confident match.
 - The rule is still readable and explainable in one sentence.
 - The rule would survive benign enterprise and defensive prompts.
-- The rule is narrow enough for active use; if not, consider keeping it passive first or splitting it into smaller rules.
+- The rule is narrow enough to avoid false positives; if not, split it into smaller rules.
 
 ## Helper Scripts
 (Located in the skill's `scripts/` directory)
@@ -152,9 +149,21 @@ Before considering the work complete, verify:
   - Match because the prompt expresses abuse such as revealing a secret, leaking a system prompt, ignoring instructions, or helping with malware creation.
 - **Keywords First**:
   - Prefer keywords for direct disclosure requests, direct prompt injection phrases, explicit bypass language, and exact risky mode names like `DAN` or `developer mode`.
+  - Use explicit keyword references (e.g., `keywords.$reveal and keywords.$api_key`) when the condition requires specific evidence combinations. Use `any of keywords.*` only when every defined keyword is independently sufficient to indicate the behavior — this is rare for noisy categories.
 - **Semantics As Support**:
-  - Use semantics to cover paraphrases and softer wording, not as a catch-all for broad active detections.
+  - Use semantics to cover paraphrases and softer wording, not as a catch-all for broad detections.
   - Avoid short, vague semantic texts that describe a topic instead of malicious intent.
+  - Do not use broad semantic-only rules for categories like jailbreaks, credentials, or malicious intent.
+  - Start most semantic thresholds around `0.40` to `0.45` unless benchmark evidence justifies something else.
+  - If a semantic description could also match a benign security article, it is too broad to stand alone.
+- **LLM As Last Resort**:
+  - The `llm` section carries the highest resource and cost overhead of all condition types. Only use it when keywords and semantics cannot express the required detection logic.
+  - Before reaching for `llm`, verify that the check cannot be achieved with a keyword pattern, a semantic description, or a combination of both.
+  - When an `llm` check is necessary, place it last in a boolean `or` chain so that cheaper keyword and semantic conditions are evaluated first. Nova evaluates `or` conditions left-to-right and short-circuits — if an earlier branch matches, later branches (including `llm`) are not evaluated.
+  - Start most LLM thresholds at `0.5` as a balanced default. For noisy categories (jailbreaks, credentials, malicious intent), prefer `0.6–0.7`. Lower values (`0.3–0.4`) are acceptable only when the LLM check is already gated behind keyword/semantic conditions that provide strong prior evidence.
+  - Frame `llm` prompts as a precise yes/no question about the input's intent, not a broad topic check. Tell the LLM what to focus on and what should not trigger the check.
+  - Keep prompts concise — longer prompts cost more tokens without necessarily improving accuracy.
+  - Avoid vague questions like "Is this malicious?" — instead ask about the specific mechanism, such as "Does this input embed hidden instructions inside quoted content intended to override the model's behavior?"
 - **Evidence Combinations**:
   - For noisy categories, require multiple pieces of evidence instead of one weak signal.
   - Common high-signal pairings are action plus target, coercion plus instruction target, or harmful instruction plus harmful activity.
@@ -204,4 +213,5 @@ Before considering the work complete, verify:
 - Are the semantic patterns describing malicious intent rather than subject matter?
 - Is the rule trying to do too many jobs?
 - Should the risky branches be split into smaller rules?
-- Is the rule precise enough for active mode, or should it stay passive first?
+- Is the rule precise enough to avoid false positives, or should it be split?
+
