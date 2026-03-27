@@ -170,10 +170,22 @@ def run_test(
     result = matcher.check_prompt(prompt)
     actual_match = result["matched"]
 
+    # Build detail string with all available scores
+    detail = f"matched={actual_match}, expected={expected_match}"
+    if verbose and result.get("matching_keywords"):
+        detail += f", keywords={result['matching_keywords']}"
+    if verbose and result.get("semantic_scores"):
+        sem_parts = []
+        for k, v in result["semantic_scores"].items():
+            sem_parts.append(f"{k}={v:.3f}")
+        detail += f", sem={{{', '.join(sem_parts)}}}"
+    if verbose and result.get("llm_scores"):
+        llm_parts = []
+        for k, v in result["llm_scores"].items():
+            llm_parts.append(f"{k}={v:.3f}")
+        detail += f", llm={{{', '.join(llm_parts)}}}"
+
     if actual_match == expected_match:
-        detail = f"matched={actual_match}, expected={expected_match}"
-        if verbose and result.get("matching_keywords"):
-            detail += f", keywords={result['matching_keywords']}"
         return "pass", detail
 
     # Mismatch: expected True but got False, rule needs LLM, and no LLM evaluator provided
@@ -185,11 +197,6 @@ def run_test(
     ):
         return "skip", "condition requires LLM evaluation (run with --llm-testing)"
 
-    detail = f"matched={actual_match}, expected={expected_match}"
-    if verbose and result.get("matching_keywords"):
-        detail += f", keywords={result['matching_keywords']}"
-    if result.get("llm_evaluation"):
-        detail += f", llm_result={result['llm_evaluation']}"
     return "fail", detail
 
 

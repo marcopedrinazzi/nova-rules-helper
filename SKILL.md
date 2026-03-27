@@ -47,6 +47,15 @@ If the idea is too broad, split it before authoring. Prefer one focused attack f
 - ignore or override prior instructions
 - explicit jailbreak modes
 
+### 1b. One-Line Complexity Gate
+Before writing or editing any rule, you must be able to complete this sentence in plain English:
+
+> "This rule fires when the input **[one clear behavior]**."
+
+If the sentence needs "and also" or covers more than one distinct attack family, **stop and split** into separate rules. If you cannot state the detection goal in one line, the rule is too complex to implement cleanly — simplify or decompose it first.
+
+This gate applies at every stage: initial design, refinement, and final review. A rule that passes validation but fails this test is not ready.
+
 ### 2. Research & Authoring
 - Identify the concrete threat or pattern you want to detect.
 - Do not scaffold a new rule manually when the packaged generator can do it.
@@ -116,7 +125,7 @@ python3 scripts/tests/test_rules.py --rules-dir <repo_path> --tests-dir <repo_pa
 Before considering the work complete, verify:
 - The rule detects abuse, not just a risky topic.
 - The condition requires enough evidence for a confident match.
-- The rule is still readable and explainable in one sentence.
+- The rule still passes the **One-Line Complexity Gate** (step 1b) — if you cannot complete "This rule fires when the input **[one clear behavior]**" in a single sentence, split the rule.
 - The rule would survive benign enterprise and defensive prompts.
 - The rule is narrow enough to avoid false positives; if not, split it into smaller rules.
 
@@ -171,7 +180,7 @@ Before considering the work complete, verify:
   - Use the most specific subcategory from `CATEGORIES.md`.
   - Ensure all mandatory metadata fields are present and valid.
   - Avoid overloaded conditions that try to cover multiple attack families at once.
-  - If a condition is hard to explain in one sentence, split the rule.
+  - If a condition fails the **One-Line Complexity Gate** (step 1b), split the rule before proceeding.
 - **Test Design**:
   - Provide both positive (should match) and negative (should not match) test cases for every rule.
   - Use the `prompts` list in YAML to test multiple variations of an attack in a single test block.
@@ -207,6 +216,7 @@ Before considering the work complete, verify:
 - Do not match defensive explanations, educational material, or generic vulnerability discussion by themselves.
 
 ## Review Checklist
+- **One-Line Gate**: Can you complete "This rule fires when the input **[___]**" in one sentence? If not, split.
 - Does the rule detect abuse, or only a topic?
 - Does the rule require enough evidence?
 - Could a benign enterprise or security prompt satisfy this condition?
