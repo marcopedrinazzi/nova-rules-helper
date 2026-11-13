@@ -11,7 +11,11 @@ directory. Each test case defines a prompt and an expected outcome (i.e., whethe
 a rule should match or not). The script then runs the Nova matching engine against
 each prompt and compares the actual outcome with the expected one.
 
-The test runner supports three types of matching:
+Decision tests evaluate prompts through a live model only with --decision-testing.
+Required Decision checks are otherwise skipped. Optional decision_state supplies
+caller context; expected_match: null expects an incomplete live evaluation.
+
+The test runner also supports:
 - **Keyword Matching**: The default and most common type of matching.
 - **Semantic Matching**: For rules that use semantic vectors for matching.
 - **LLM-based Matching**: For rules that require a Large Language Model for
@@ -28,12 +32,17 @@ import sys
 import re
 import copy
 import argparse
+import json
 from typing import Dict, Any, List, Tuple, Optional
 import yaml
 from colorama import init as colorama_init
 from nova.core.parser import NovaRuleFileParser, NovaParserError
 from nova.core.matcher import NovaMatcher
 from nova.core.rules import NovaRule
+from nova.core.decision import NovaEvaluationError
+from nova.evaluators.decision.config import DecisionConfig
+from nova.evaluators.decision.factory import create_decision_evaluator
+from nova.utils.config import get_config
 from nova.evaluators.base import LLMEvaluator
 from nova.evaluators.semantics import DefaultSemanticEvaluator
 from nova.evaluators.llm import get_validated_evaluator
@@ -84,12 +93,18 @@ def load_test_cases(tests_dir: str) -> List[Dict[str, Any]]:
                 with open(fpath, "r") as f:
                     data = yaml.safe_load(f)
                 
-                if not data or "tests" not in data:
+                if not isinstance(data, dict):
+                    raise ValueError(f"{fpath}: test file must be a mapping")
+                if "tests" not in data:
                     continue
-                
+                if not isinstance(data["tests"], list):
+                    raise ValueError(f"{fpath}: tests must be a list")
+
                 rule_file = data.get("rule_file", "")
                 
                 for tc in data["tests"]:
+                    if not isinstance(tc, dict):
+                        raise ValueError(f"{fpath}: each test must be a mapping")
                     tc["_source_yaml"] = fpath
                     tc["_rule_file"] = rule_file
 
@@ -132,9 +147,10 @@ def load_rules_from_file(
 def run_test(
     rule: NovaRule,
     prompt: str,
-    expected_match: bool,
+    expected_match: Optional[bool],
     llm_evaluator: Optional[LLMEvaluator] = None,
     verbose: bool = False,
+    *, decision_config=None, decision_state=None, decision_evaluator=None,
 ) -> Tuple[str, str]:
     """
     Run a single test case against a rule.
@@ -150,28 +166,51 @@ def run_test(
     Args:
         rule: The `NovaRule` object to be tested.
         prompt: The input prompt to test against the rule.
-        expected_match: A boolean indicating the expected outcome.
+        expected_match: True/False for a completed result, or None for incomplete.
         llm_evaluator: An optional `LLMEvaluator` instance. If provided, LLM-based
                        evaluation will be performed.
         verbose: If `True`, includes additional details in the output message.
+        decision_config: Runtime Decision options; disabled by default.
+        decision_state: Optional caller-supplied context for the scan.
+        decision_evaluator: Shared evaluator for live Decision testing.
 
     Returns:
         A tuple containing the test status ("pass", "fail", or "skip") and a
         detailed message about the test result.
     """
     rule_needs_llm = needs_llm(rule)
-
+    if expected_match is not None and type(expected_match) is not bool:
+        return "fail", "expected_match must be true, false, or null (incomplete)"
+    if isinstance(decision_config, DecisionConfig):
+        resolved_config = decision_config
+    else:
+        options = dict(decision_config or {})
+        options.setdefault("enabled", False)
+        resolved_config = DecisionConfig.resolve(options) if options["enabled"] else DecisionConfig(**options)
     matcher = NovaMatcher(
         rule,
-        semantic_evaluator=get_semantic_evaluator(),
+        semantic_evaluator=get_semantic_evaluator() if rule.semantics else None,
         llm_evaluator=llm_evaluator,
         create_llm_evaluator=True if llm_evaluator else False,
+        decision_config=resolved_config, decision_evaluator=decision_evaluator,
     )
-    result = matcher.check_prompt(prompt)
-    actual_match = result["matched"]
+    try:
+        result = matcher.check_prompt(prompt, decision_state=decision_state)
+        actual_match = result["matched"]
+        causes = []
+    except NovaEvaluationError as error:
+        result, actual_match, causes = error.result, None, error.causes
+        if not resolved_config.enabled and "disabled" in causes:
+            return "skip", "condition requires Decision evaluation (run with --decision-testing)"
+        if expected_match is not None and set(causes) == {"llm_unavailable"} and not llm_evaluator:
+            return "skip", "condition requires LLM evaluation (run with --llm-testing)"
 
     # Build detail string with all available scores
     detail = f"matched={actual_match}, expected={expected_match}"
+    if causes:
+        detail += f", incomplete={','.join(sorted(set(causes)))}"
+    if verbose and result.get("decision_results"):
+        detail += f", decision={json.dumps(result['decision_results'], ensure_ascii=False)}"
     if verbose and result.get("matching_keywords"):
         detail += f", keywords={result['matching_keywords']}"
     if verbose and result.get("semantic_scores"):
@@ -191,8 +230,9 @@ def run_test(
     # Mismatch: expected True but got False, rule needs LLM, and no LLM evaluator provided
     if (
         expected_match
-        and not actual_match
+        and actual_match is False
         and rule_needs_llm
+        and not rule.decision
         and not llm_evaluator
     ):
         return "skip", "condition requires LLM evaluation (run with --llm-testing)"
@@ -207,6 +247,11 @@ def run(
     llm_testing: bool = False,
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
+    decision_testing: bool = False,
+    decision_provider: Optional[str] = None,
+    decision_model: Optional[str] = None,
+    decision_host: Optional[str] = None,
+    config: Optional[str] = None,
     **kwargs,
 ) -> Tuple[int, Dict[str, Any]]:
     """
@@ -233,6 +278,18 @@ def run(
         A tuple containing the exit code and a dictionary with the test results.
     """
     global _llm_evaluator
+    _llm_evaluator = None
+    options = {"enabled": decision_testing}
+    options.update({key: value for key, value in (("provider", decision_provider), ("model", decision_model),
+                                                 ("host", decision_host)) if value is not None})
+    try:
+        if config and decision_testing:
+            get_config(config)
+        decision_config = DecisionConfig.resolve(options) if decision_testing else DecisionConfig()
+        decision_evaluator = create_decision_evaluator(decision_config) if decision_testing else None
+    except (ValueError, TypeError) as error:
+        print_fail(f"Invalid Decision configuration: {error}")
+        return 1, {"passed": 0, "failed": 1, "skipped": 0}
     rules_dir = os.path.abspath(rules_dir)
     tests_dir = os.path.abspath(tests_dir)
 
@@ -254,7 +311,11 @@ def run(
             print_fail(f"Failed to initialize LLM evaluator: {e}")
             return 1, {"passed": 0, "failed": 1, "skipped": 0}
 
-    test_cases = load_test_cases(tests_dir)
+    try:
+        test_cases = load_test_cases(tests_dir)
+    except (OSError, yaml.YAMLError, ValueError) as error:
+        print_fail(f"Cannot load test cases: {error}")
+        return 1, {"passed": 0, "failed": 1, "skipped": 0}
     if not test_cases:
         print_warn("No YAML test case files found")
         return 0, {"passed": 0, "failed": 0, "skipped": 0}
@@ -301,8 +362,8 @@ def run(
              failed += 1
              continue
 
-        if expected_match is None:
-            print_fail(f"{test_name}: missing mandatory 'expected_match' field")
+        if "expected_match" not in tc or (expected_match is not None and type(expected_match) is not bool):
+            print_fail(f"{test_name}: expected_match must be present and be true, false, or null")
             failed += 1
             continue
 
@@ -326,9 +387,18 @@ def run(
             continue
 
         rule = rules_in_file[rule_name]
-        status, detail = run_test(
-            rule, prompt, expected_match, llm_evaluator=_llm_evaluator, verbose=verbose
-        )
+        if "decision_answers" in tc:
+            print_fail(f"{test_name}: decision_answers is unsupported; test the prompt with --decision-testing")
+            failed += 1
+            continue
+        try:
+            status, detail = run_test(
+                rule, prompt, expected_match, llm_evaluator=_llm_evaluator, verbose=verbose,
+                decision_config=decision_config, decision_state=tc.get("decision_state"),
+                decision_evaluator=decision_evaluator,
+            )
+        except (ValueError, TypeError) as error:
+            status, detail = "fail", f"Invalid test input: {error}"
 
         if status == "skip":
             skipped += 1
@@ -349,7 +419,7 @@ def run(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run YAML-driven keyword and LLM tests against Nova rules."
+        description="Run YAML-driven tests against Nova rules, including optional live Decision models."
     )
     parser.add_argument(
         "--rules-dir", default=".",
@@ -376,6 +446,11 @@ def main():
         "--llm-model", type=str, default=None,
         help="Specify the model name for the LLM provider"
     )
+    parser.add_argument("--decision-testing", action="store_true", help="Enable live Decision evaluation of test prompts")
+    parser.add_argument("--decision-provider", choices=["openrouter", "ollama"], help="Decision provider")
+    parser.add_argument("--decision-model", help="Decision model ID (required for Ollama)")
+    parser.add_argument("--decision-host", help="Ollama Decision server URL")
+    parser.add_argument("--config", help="Nova configuration file, including API keys")
     args = parser.parse_args()
 
     colorama_init()
@@ -386,6 +461,11 @@ def main():
         llm_testing=args.llm_testing,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,
+        decision_testing=args.decision_testing,
+        decision_provider=args.decision_provider,
+        decision_model=args.decision_model,
+        decision_host=args.decision_host,
+        config=args.config,
     )
     sys.exit(exit_code)
 

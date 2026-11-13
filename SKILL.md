@@ -1,6 +1,6 @@
 ---
 name: nova-rules-helper
-description: Create, refine, validate, and test Nova Framework detection rules (.nov files) and their YAML tests. Use when an agent needs to author new Nova rules, reduce false positives, review keyword or semantic conditions, audit rule coverage, classify a rule into the Nova taxonomy, or run Nova validation and test tooling.
+description: Create, refine, validate, and test Nova Framework detection rules (.nov files) and their YAML tests. Use when an agent needs to author new Nova rules, reduce false positives, review keyword, semantic, or decision model conditions, audit rule coverage, classify a rule into the Nova taxonomy, or run Nova validation and test tooling.
 ---
 
 # Nova Rules Helper
@@ -20,7 +20,7 @@ If a packaged script exists for the task, treat it as the default path and expla
 
 ## Prerequisites
 
-This skill requires the `nova-hunting` framework and `yamllint`. Use the environment checker to verify your setup:
+This skill requires a `nova-hunting` build with Decision support and `yamllint`, including when running tests for rules without Decision declarations. Use the environment checker to verify your setup:
 
 ```bash
 python3 scripts/check_env.py
@@ -64,10 +64,13 @@ This gate applies at every stage: initial design, refinement, and final review. 
   python3 scripts/create_rule.py "MyNewRule" --category "prompt_manipulation/jailbreak" --rules-dir <repo_path> --tests-dir <repo_path>/tests
   ```
 
+Use `--decision noul`, `--decision choice`, or `--decision score` to generate a Decision-only starter with YAML prompt tests. Refine its question, criteria, and inputs for the intended behavior.
+
 ### 3. Rule Refinement
 - Edit the generated `.nov` file.
 - **Mandatory UUID**: ALWAYS use `scripts/generate_uuid.py` for all UUID fields.
 - Review [rules.md](references/rules.md) for syntax/metadata requirements.
+- Detection sections are optional: include only those the rule needs or that the author explicitly specifies.
 - Consult [CATEGORIES.md](references/CATEGORIES.md) for the official taxonomy.
 - If a rule is curated from PromptIntel, set optional `promptintel_url` to the source feed item URL. Keep `reference` for external research, reports, or examples instead of provenance.
 - Start with explicit lexical evidence for the risky behavior.
@@ -95,12 +98,26 @@ condition:
     (semantics.$override_intent and keywords.$instructions)
 ```
 
-For detailed guidance on semantics, LLM usage, thresholds, and prompt writing, see **Best Practices** below.
+For detailed guidance on semantics, LLM usage, decision models, thresholds, and prompt writing, see **Best Practices** below.
+
+### 3b. Rules Using Decision Models
+
+Choose the type that matches the answer needed: `noul` for yes/no, `choice` for unordered categories, or `score` for a described spectrum. Use multiple questions for distinct judgments the rule needs; using all three types is not a default requirement.
+
+- Keep one detection goal and write clear questions and criteria that distinguish active requests from benign discussion.
+- Put thresholds and category selections in declarations; combine predicates in `condition:`.
+- Treat unresolved required checks as incomplete assessments, not nonmatches.
+
+See the [Decision section in rules.md](references/rules.md#decision-section) for syntax, authoring guidance, and examples.
 
 ### 4. Test Enhancement & Coverage
 - Add test cases to the YAML file in the `tests/` directory.
 - Cover both obvious attacks and likely paraphrases.
 - Add negative tests for benign enterprise, security, educational, translation, and summarization prompts that discuss the topic without expressing abuse.
+- Supply `decision_state` for context-dependent questions. Include the same action under different approved tasks; the application owns validation of required context.
+- Set `expected_match` to `true` or `false` for a completed outcome, or `null` for an expected incomplete assessment. Never count an incomplete result as a nonmatch.
+- Enable model evaluation with `--decision-testing` and select the provider/model. Required Decision checks are skipped when it is disabled.
+- See [Decision test fields](references/rules.md#decision-tests) for the YAML format and runner options.
 - **Audit Coverage**: Identify gaps in the repository:
   ```bash
   python3 scripts/audit_coverage.py --rules-dir <repo_path> --tests-dir <repo_path>/tests
@@ -121,6 +138,11 @@ Run the packaged functional test suite to ensure your rule triggers correctly:
 ```bash
 python3 scripts/tests/test_rules.py --rules-dir <repo_path> --tests-dir <repo_path>/tests -v
 ```
+
+Use `--decision-testing` to evaluate prompts with a Decision model. Required
+Decision checks are skipped when it is disabled. Live model failures fail boolean
+expectations; `expected_match: null` explicitly expects an incomplete assessment.
+Use `-v` to inspect returned scores, confidence, and unresolved reasons.
 
 ### 7. Final Rule Review
 Before considering the work complete, verify:
@@ -188,6 +210,7 @@ Before considering the work complete, verify:
   - keywords is the less expensive in term of resources
   - Semantic is second but could lead to false positive
   - LLM is usually the most reliable but more expensive
+  - The `decision:` section uses decision models; Nova applies rule thresholds to their returned answers. Calibrate these thresholds for the selected model and task.
 - **Test Design**:
   - Provide both positive (should match) and negative (should not match) test cases for every rule.
   - Use the `prompts` list in YAML to test multiple variations of an attack in a single test block.
@@ -231,4 +254,5 @@ Before considering the work complete, verify:
 - Is the rule trying to do too many jobs?
 - Should the risky branches be split into smaller rules?
 - Is the rule precise enough to avoid false positives, or should it be split?
+- For Decision rules, are the primitive, scale, match categories, context requirements, and unresolved outcomes documented and checked?
 

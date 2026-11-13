@@ -55,6 +55,9 @@ def run_audit(rules_dir: str, tests_dir: str):
     print(f"--- Coverage Audit ---")
     print(f"Total Rules Defined: {len(all_defined_rules)}")
     print(f"Total Rules Tested:  {len(tested_rules)}")
+    if not all_defined_rules:
+        print("No rules found; coverage is not applicable.")
+        return
     print(f"Coverage:           {((len(all_defined_rules) - len(missing)) / len(all_defined_rules) * 100):.1f}%")
     
     if missing:

@@ -124,6 +124,11 @@ def run(rules_dir: str, verbose: bool = False, **kwargs) -> Tuple[int, Dict[str,
     all_errors = []
     all_warnings = []
 
+    for fpath, error in parse_errors:
+        message = f"{os.path.relpath(fpath, rules_dir)}: {error}"
+        all_errors.append(message)
+        print_fail(message)
+
     # --- Error checks ---
     print(f"\n  --- Duplicate UUIDs ---")
     dup_uuids = check_duplicate_uuids(successes, rules_dir)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import sys
 from datetime import date
@@ -7,6 +8,34 @@ from datetime import date
 # Ensure the skill's scripts directory is in the path for importing generate_uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from generate_uuid import get_new_uuid
+
+DECISION_TEMPLATES = {
+    "noul": '''        $check = noul QUESTION {
+            true = "An active instruction to carry out the described behavior"
+            false = "Ordinary work or discussion without a request to execute the behavior"
+            threshold = 0.75
+        }''',
+    "choice": '''        $check = choice QUESTION {
+            options = {
+                active = "An active instruction to carry out the described behavior"
+                discussion = "Quotation or analysis without a request to execute the behavior"
+                other = "An unrelated request"
+            }
+            match = ["active"]
+            min_confidence = 0.60
+        }''',
+    "score": '''        $check = score QUESTION {
+            levels = [
+                "An unrelated request",
+                "Discussion without a request to execute the behavior",
+                "An implicit request to carry out the described behavior",
+                "An explicit request to carry out the described behavior"
+            ]
+            threshold = 2.0
+            min_confidence = 0.60
+        }''',
+}
+
 
 def pascal_to_snake(name):
     """Converts PascalCase to snake_case."""
@@ -16,7 +45,7 @@ def pascal_to_snake(name):
     s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s)
     return s.lower()
 
-def create_nov_file(name, category, description, author, severity, output_dir):
+def create_nov_file(name, category, description, author, severity, output_dir, decision=None):
     """Creates a template .nov file."""
     filename = pascal_to_snake(name) + ".nov"
     fpath = os.path.join(output_dir, filename)
@@ -49,6 +78,14 @@ def create_nov_file(name, category, description, author, severity, output_dir):
         keywords.$keyword1 and semantics.$intent1
 }}
 """
+    if decision:
+        questions = {
+            "noul": f"Does text actively request this behavior: {description}?",
+            "choice": f"How does text relate to this behavior: {description}?",
+            "score": f"How directly does text request this behavior: {description}?",
+        }
+        declaration = DECISION_TEMPLATES[decision].replace("QUESTION", json.dumps(questions[decision]))
+        content = content[:content.index("    keywords:")] + "    decision:\n" + declaration + "\n\n    condition:\n        decision.$check\n}\n"
     with open(fpath, "w") as f:
         f.write(content)
     print(f"Created rule template: {fpath}")
@@ -87,11 +124,13 @@ if __name__ == "__main__":
     parser.add_argument("--rules-dir", default=".", help="Directory to save .nov file")
     parser.add_argument("--tests-dir", default="tests", help="Directory to save .yaml file")
     
+    parser.add_argument("--decision", choices=["noul", "choice", "score"],
+                        help="Generate a Decision-only starter rule and prompt tests")
     args = parser.parse_args()
     
     # Ensure directories exist
     os.makedirs(args.rules_dir, exist_ok=True)
     os.makedirs(args.tests_dir, exist_ok=True)
     
-    _, rule_filename = create_nov_file(args.name, args.category, args.description, args.author, args.severity, args.rules_dir)
+    _, rule_filename = create_nov_file(args.name, args.category, args.description, args.author, args.severity, args.rules_dir, decision=args.decision)
     create_test_file(args.name, rule_filename, args.tests_dir)
