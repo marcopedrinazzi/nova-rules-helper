@@ -16,7 +16,7 @@ The **nova-rules-helper** equips your LLM agent with the tools and context neede
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/nova-rules-helper.git
+git clone https://github.com/marcopedrinazzi/nova-rules-helper.git
 cd nova-rules-helper
 
 # Install required dependencies
