@@ -71,7 +71,7 @@ def create_nov_file(name, category, description, author, severity, output_dir, d
         $intent1 = "describe the specific malicious intent to detect" (THRESHOLD)
 
     // Add llm section only if keywords and semantics cannot cover the detection.
-    // Use a precise yes/no question, not a broad topic check. Set threshold deliberately.
+    // Use a precise yes/no question, not a broad topic check. Set model temperature deliberately.
     // See SKILL.md Best Practices > LLM As Last Resort for guidance.
 
     condition:
@@ -85,7 +85,7 @@ def create_nov_file(name, category, description, author, severity, output_dir, d
             "score": f"How directly does text request this behavior: {description}?",
         }
         declaration = DECISION_TEMPLATES[decision].replace("QUESTION", json.dumps(questions[decision]))
-        content = content[:content.index("    keywords:")] + "    decision:\n" + declaration + "\n\n    condition:\n        decision.$check\n}\n"
+        content = content[:content.index("    keywords:")] + "    llm:\n" + declaration + "\n\n    condition:\n        llm.$check\n}\n"
     with open(fpath, "w") as f:
         f.write(content)
     print(f"Created rule template: {fpath}")
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument("--tests-dir", default="tests", help="Directory to save .yaml file")
     
     parser.add_argument("--decision", choices=["noul", "choice", "score"],
-                        help="Generate a Decision-only starter rule and prompt tests")
+                        help="Generate a starter rule with decision model questions under llm: and prompt tests")
     args = parser.parse_args()
     
     # Ensure directories exist

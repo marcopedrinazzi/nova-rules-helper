@@ -66,8 +66,10 @@ def get_semantic_evaluator() -> DefaultSemanticEvaluator:
 
 def needs_llm(rule: NovaRule) -> bool:
     """Check if a rule's condition requires LLM evaluation to ever match."""
+    if rule.decision:
+        return bool(rule.llms)
     condition = rule.condition.lower()
-    if "llm." in condition:
+    if "llm." in condition or re.search(r"\b(?:any|all|\d+)\s+of\s+llm\b", condition):
         return True
     for match in re.finditer(r"\$([a-zA-Z0-9_]+)", condition):
         var_name = "$" + match.group(1)
@@ -202,7 +204,7 @@ def run_test(
         result, actual_match, causes = error.result, None, error.causes
         if not resolved_config.enabled and "disabled" in causes:
             return "skip", "condition requires Decision evaluation (run with --decision-testing)"
-        if expected_match is not None and set(causes) == {"llm_unavailable"} and not llm_evaluator:
+        if set(causes) == {"llm_unavailable"} and not llm_evaluator:
             return "skip", "condition requires LLM evaluation (run with --llm-testing)"
 
     # Build detail string with all available scores
@@ -439,7 +441,7 @@ def main():
     )
     parser.add_argument(
         "--llm-provider", type=str, default=None,
-        choices=["openai", "anthropic", "azure", "ollama", "groq"],
+        choices=["openai", "anthropic", "azure", "ollama", "groq", "openrouter"],
         help="Specify the LLM provider to use (e.g., 'openai', 'ollama')"
     )
     parser.add_argument(

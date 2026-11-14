@@ -20,7 +20,7 @@ If a packaged script exists for the task, treat it as the default path and expla
 
 ## Prerequisites
 
-This skill requires a `nova-hunting` build with Decision support and `yamllint`, including when running tests for rules without Decision declarations. Use the environment checker to verify your setup:
+This skill requires a `nova-hunting` build supporting typed questions under `llm:` and `yamllint`, including when running tests for rules without typed questions. Use the environment checker to verify your setup:
 
 ```bash
 python3 scripts/check_env.py
@@ -64,7 +64,7 @@ This gate applies at every stage: initial design, refinement, and final review. 
   python3 scripts/create_rule.py "MyNewRule" --category "prompt_manipulation/jailbreak" --rules-dir <repo_path> --tests-dir <repo_path>/tests
   ```
 
-Use `--decision noul`, `--decision choice`, or `--decision score` to generate a Decision-only starter with YAML prompt tests. Refine its question, criteria, and inputs for the intended behavior.
+Use `--decision noul`, `--decision choice`, or `--decision score` to generate a starter with typed questions under `llm:` with YAML prompt tests. Refine its question, criteria, and inputs for the intended behavior.
 
 ### 3. Rule Refinement
 - Edit the generated `.nov` file.
@@ -100,15 +100,15 @@ condition:
 
 For detailed guidance on semantics, LLM usage, decision models, thresholds, and prompt writing, see **Best Practices** below.
 
-### 3b. Rules Using Decision Models
+### 3b. Decision Models in `llm:`
 
-Choose the type that matches the answer needed: `noul` for yes/no, `choice` for unordered categories, or `score` for a described spectrum. Use multiple questions for distinct judgments the rule needs; using all three types is not a default requirement.
+`llm:` contains quoted questions evaluated by LLMs and `noul`, `choice`, and `score` questions evaluated by decision models. Use unique variable names and `llm.$name` references for both forms. Choose the type that matches the answer needed: `noul` for yes/no, `choice` for unordered categories, or `score` for a described spectrum. Use multiple questions for distinct judgments the rule needs; using all three types is not a default requirement.
 
 - Keep one detection goal and write clear questions and criteria that distinguish active requests from benign discussion.
 - Put thresholds and category selections in declarations; combine predicates in `condition:`.
 - Treat unresolved required checks as incomplete assessments, not nonmatches.
 
-See the [Decision section in rules.md](references/rules.md#decision-section) for syntax, authoring guidance, and examples.
+See the [Decision model questions in rules.md](references/rules.md#decision-model-questions) for syntax, authoring guidance, and examples.
 
 ### 4. Test Enhancement & Coverage
 - Add test cases to the YAML file in the `tests/` directory.
@@ -116,8 +116,8 @@ See the [Decision section in rules.md](references/rules.md#decision-section) for
 - Add negative tests for benign enterprise, security, educational, translation, and summarization prompts that discuss the topic without expressing abuse.
 - Supply `decision_state` for context-dependent questions. Include the same action under different approved tasks; the application owns validation of required context.
 - Set `expected_match` to `true` or `false` for a completed outcome, or `null` for an expected incomplete assessment. Never count an incomplete result as a nonmatch.
-- Enable model evaluation with `--decision-testing` and select the provider/model. Required Decision checks are skipped when it is disabled.
-- See [Decision test fields](references/rules.md#decision-tests) for the YAML format and runner options.
+- Enable typed model evaluation with `--decision-testing` and select the provider/model. Use `--llm-testing` for quoted checks; enable both for mixed rules. Required checks are skipped when their evaluator is disabled.
+- See [Decision model tests](references/rules.md#decision-model-tests) for the YAML format and runner options.
 - **Audit Coverage**: Identify gaps in the repository:
   ```bash
   python3 scripts/audit_coverage.py --rules-dir <repo_path> --tests-dir <repo_path>/tests
@@ -190,10 +190,10 @@ Before considering the work complete, verify:
   - Start most semantic thresholds around `0.40` to `0.45` unless benchmark evidence justifies something else.
   - If a semantic description could also match a benign security article, it is too broad to stand alone.
 - **LLM As Last Resort**:
-  - The `llm` section carries the highest resource and cost overhead of all condition types. Only use it when keywords and semantics cannot express the required detection logic.
+  - Quoted LLM checks add model latency and cost. Use them when keywords and semantics cannot express the required detection logic.
   - Before reaching for `llm`, verify that the check cannot be achieved with a keyword pattern, a semantic description, or a combination of both.
-  - When an `llm` check is necessary, place it last in a boolean `or` chain so that cheaper keyword and semantic conditions are evaluated first. Nova evaluates `or` conditions left-to-right and short-circuits — if an earlier branch matches, later branches (including `llm`) are not evaluated.
-  - Start most LLM thresholds at `0.5` as a balanced default. For noisy categories (jailbreaks, credentials, malicious intent), prefer `0.6–0.7`. Lower values (`0.3–0.4`) are acceptable only when the LLM check is already gated behind keyword/semantic conditions that provide strong prior evidence.
+  - Nova evaluates keywords and semantics before model checks. For rules with typed questions, decision model questions run before quoted LLM checks. Checks are skipped when other evidence already determines the condition; rearranging branches does not change this stage order.
+  - The parenthesized value in a quoted LLM check is model temperature, not a match threshold. Typed `noul` and `score` questions put their match thresholds inside the declaration.
   - Frame `llm` prompts as a precise yes/no question about the input's intent, not a broad topic check. Tell the LLM what to focus on and what should not trigger the check.
   - Keep prompts concise — longer prompts cost more tokens without necessarily improving accuracy.
   - Avoid vague questions like "Is this malicious?" — instead ask about the specific mechanism, such as "Does this input embed hidden instructions inside quoted content intended to override the model's behavior?"
@@ -210,7 +210,7 @@ Before considering the work complete, verify:
   - keywords is the less expensive in term of resources
   - Semantic is second but could lead to false positive
   - LLM is usually the most reliable but more expensive
-  - The `decision:` section uses decision models; Nova applies rule thresholds to their returned answers. Calibrate these thresholds for the selected model and task.
+  - Typed questions under `llm:` use decision models; Nova applies rule thresholds to their returned answers. Calibrate these thresholds for the selected model and task.
 - **Test Design**:
   - Provide both positive (should match) and negative (should not match) test cases for every rule.
   - Use the `prompts` list in YAML to test multiple variations of an attack in a single test block.

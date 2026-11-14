@@ -31,13 +31,13 @@ rule YourRuleName
     semantics:
         $concept1 = "semantic description of intent" (0.35)
 
-    decision:
-        $check1 = noul "A specific yes/no question about the behavior to detect" {
+    llm:
+        $noul1 = noul "A specific yes/no question about the behavior to detect" {
             true = "Describe what counts as the behavior being present"
             false = "Describe benign cases where the behavior is absent"
             threshold = 0.75
         }
-        $check2 = choice "A question selecting one category from the options" {
+        $choice1 = choice "A question selecting one category from the options" {
             options = {
                 category1 = "Describe the first category"
                 category2 = "Describe the second category"
@@ -46,7 +46,7 @@ rule YourRuleName
             match = ["category1"]
             min_confidence = 0.60
         }
-        $check3 = score "A question rating one dimension along the described levels" {
+        $score1 = score "A question rating one dimension along the described levels" {
             levels = [
                 "Describe a concrete situation at the low end",
                 "Describe a concrete situation in the middle",
@@ -56,11 +56,10 @@ rule YourRuleName
             min_confidence = 0.60
         }
 
-    llm:
         $check1 = "Natural language instruction for the LLM to verify" (0.5)
 
     condition:
-        any of keywords.* or semantics.$concept1 or llm.$check1 or any of decision
+        any of keywords.* or semantics.$concept1 or any of llm
 }
 ```
 
@@ -88,14 +87,20 @@ All rules must include the following fields in the `meta` section:
 
 1. **`keywords`**: Direct string matching or regular expressions. Best for specific payloads or known malicious strings.
 2. **`semantics`**: Intent-based detection using semantic similarity. Requires a threshold (0.0 to 1.0).
-3. **`decision`**: Questions and answer criteria evaluated by decision models using `noul`, `choice`, and `score` primitives. Nova converts the model answers into predicates using the declaration settings. See [Decision section](#decision-section).
-4. **`llm`**: Powerful natural language verification. Use this for complex logic that keywords can't capture. Requires a threshold.
-5. **`condition`**: Boolean logic combining declared predicates. For Decision rules, use qualified references such as `decision.$active`; raw answer comparisons are not supported.
+3. **`llm`**: Quoted questions evaluated by LLMs, plus `noul`, `choice`, and `score` questions evaluated by decision models. Quoted checks keep their parenthesized value; typed questions use declaration settings. See [Decision model questions](#decision-model-questions).
+4. **`condition`**: Boolean logic combining declared predicates, including `llm.$name` references to either form. Raw typed-answer comparisons are not supported.
 
-## Decision section
+## Decision model questions
 
-Decision models answer questions about the input state using three primitives.
-Nova converts their answers into predicates for `condition:`.
+The `llm:` section supports quoted questions evaluated by LLMs and `noul`,
+`choice`, and `score` questions evaluated by decision models. Conditions reference either form as `llm.$name`;
+quantifiers such as `all of llm` include both. Variable names must be unique across
+all declarations in the section. Decision models answer the typed questions, and
+Nova converts their answers into predicates using the declaration settings.
+
+Typed questions retain the separate Decision provider configuration and testing
+options below. Quoted LLM checks remain fully supported and retain their provider configuration
+and parenthesized-value behavior; they are not deprecated.
 
 | Primitive | Use for | Required settings | Match rule |
 | --- | --- | --- | --- |
@@ -132,14 +137,14 @@ boundary, including benign quotation or analysis. Use separate Nouls for
 properties that can coexist, then combine their predicates in the condition.
 
 ```nova
-decision:
+llm:
     $override = noul "Does text actively ask the assistant to disregard governing instructions?" {
         true = "An instruction to disregard governing instructions"
         false = "An ordinary request, quotation, or analysis without a request to execute an override"
         threshold = 0.75
     }
 condition:
-    decision.$override
+    llm.$override
 ```
 
 Noul is a probability of yes, not a degree of harm. Its threshold is in `[0,1]`.
@@ -156,7 +161,7 @@ option to validate on labelled inputs. Use separate Nouls when several labels ca
 apply at once.
 
 ```nova
-decision:
+llm:
     $operation = choice "Does text request an external transfer or merely discuss one?" {
         options = {
             transfer = "An instruction to send local information to an external recipient"
@@ -167,7 +172,7 @@ decision:
         min_confidence = 0.60
     }
 condition:
-    decision.$operation
+    llm.$operation
 ```
 
 Nova accepts 2–10 options with nonempty string descriptions. Keys contain letters,
@@ -182,7 +187,7 @@ must make sense on its own; avoid bare numbers, vague degrees, or references to
 neighboring levels. Split different dimensions into separate assessments.
 
 ```nova
-decision:
+llm:
     $exposure = score "How much credential exposure would the action requested in text cause?" {
         levels = [
             "No credential exposure",
@@ -194,7 +199,7 @@ decision:
         min_confidence = 0.60
     }
 condition:
-    decision.$exposure
+    llm.$exposure
 ```
 
 Nova accepts 2–10 levels. Their array positions define a `0`–`N-1` scale; the
@@ -206,8 +211,8 @@ when evaluating the rule. Higher confidence alone does not establish correctness
 ### Syntax and conditions
 
 - Combine declared predicates with `and`, `or`, `not`, and parentheses, such as
-  `keywords.$transfer and decision.$active`. Quantifiers include `any of decision`,
-  `all of decision`, `2 of decision`, and `any of decision.$risk*`. References and
+  `keywords.$transfer and llm.$active`. Quantifiers include `any of llm`,
+  `all of llm`, `2 of llm`, and `any of llm.$risk*`. References and
   selectors must resolve to declared variables; counts must fit the selection.
 - Put thresholds in declarations. Conditions use predicates, not raw answer
   comparisons, weighted sums, or function calls.
@@ -257,9 +262,9 @@ tests:
     expected_match: false
 ```
 
-### Decision tests
+### Decision model tests
 
-Decision tests use real prompts and expected outcomes, just like other rule tests.
+Decision model tests use real prompts and expected outcomes, just like other rule tests.
 The optional per-test `decision_state` supplies caller context, such as
 `approved_task` and `current_action`; `prompt` remains the action to check.
 
@@ -293,19 +298,22 @@ python3 scripts/tests/test_rules.py --rules-dir <repo_path> --tests-dir <live_te
 ```
 
 A config file can supply Decision settings and credentials, but live Decision
-requests still require `--decision-testing`. Existing `--llm-testing` options are
-separate. Verbose output includes Decision answers, scores, confidence, and failure
-reasons.
+requests still require `--decision-testing`. `--llm-testing` enables existing quoted
+checks separately. For mixed rules, enable both flags and configure the provider/model
+for each form. Both use the same YAML prompt tests; no fixed model answers are supplied.
+Verbose output includes typed answers, scores, confidence, and failure reasons.
 
 ## Threshold Guidelines
 
-The threshold (0.0–1.0) determines the sensitivity of `semantics` and `llm` matches.
+Semantic thresholds (0.0–1.0) determine the sensitivity of `semantics` matches.
+The parenthesized value in a quoted `llm` check is model temperature, not a match
+threshold. Decision model questions use the declaration settings described below.
 
 *   **Recall (0.1–0.3)**: More matches, higher risk of false positives. Best for broad patterns.
 *   **Precision (0.7–0.9)**: Stricter matching, lower risk of false positives. Best for specific behaviors.
 *   **Balanced (0.4-0.6)**: Recommended starting point for most rules.
 
-Decision declarations use their own settings: `noul.threshold` and
+Decision model declarations use their own settings: `noul.threshold` and
 `min_confidence` are in `[0,1]`, while `score.threshold` is in `[0,N-1]` for N
 ordered levels. `choice` selects categories through `match`, not a numeric
-threshold. See [Decision section](#decision-section).
+threshold. See [Decision model questions](#decision-model-questions).
