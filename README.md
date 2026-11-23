@@ -9,7 +9,7 @@ The **nova-rules-helper** equips your LLM agent with the tools and context neede
 - **Intelligent Rule Authoring**: Helps you draft Nova rules using keywords, semantics, LLM checks, and decision models through typed questions under `llm:`.
 - **Validation & Quality Control**: Automatically checks your work for syntax errors, metadata gaps (UUIDs, severity), and taxonomy alignment.
 - **YAML Test Linting**: Ensures all YAML test cases are correctly formatted and follow the project's style guide using `yamllint`.
-- **Coverage Auditing**: Assists in maintaining 100% test coverage by identifying rules that lack corresponding YAML tests.
+- **Coverage Auditing**: Identifies rules without runnable YAML cases and validates their rule file/name references. This checks test presence; run the functional tests to verify outcomes.
 - **Functional Verification**: Runs rule tests across keywords, semantic similarity, LLM evaluation, and explicitly enabled live decision models.
 
 ## Installation

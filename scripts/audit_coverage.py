@@ -1,80 +1,59 @@
 #!/usr/bin/env python3
-import os
-import re
-import yaml
+"""Check that every rule has a runnable YAML test referencing its file and name."""
 import argparse
-from typing import Set, Dict, List
+import os
+import sys
+import yaml
 
-def discover_rules(rules_dir: str) -> Dict[str, Set[str]]:
-    """Finds all rules defined in .nov files."""
-    rules_map = {}
-    rule_pattern = re.compile(r"^rule\s+([A-Z][a-zA-Z0-9]*)")
-    
-    for root, _, files in os.walk(rules_dir):
-        for fname in files:
-            if fname.endswith(".nov"):
-                fpath = os.path.join(root, fname)
-                with open(fpath, "r") as f:
-                    rules = set()
-                    for line in f:
-                        match = rule_pattern.match(line.strip())
-                        if match:
-                            rules.add(match.group(1))
-                    rules_map[fpath] = rules
-    return rules_map
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests"))
+from test_rules import load_test_cases, load_rules_from_file
+from nova.core.parser import NovaParserError
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "validation"))
+from ci_utils import parse_all_rules
 
-def discover_tests(tests_dir: str) -> Set[str]:
-    """Finds all rule names mentioned in YAML test files."""
-    tested_rules = set()
-    for root, _, files in os.walk(tests_dir):
-        for fname in files:
-            if fname.endswith((".yaml", ".yml")):
-                fpath = os.path.join(root, fname)
-                try:
-                    with open(fpath, "r") as f:
-                        data = yaml.safe_load(f)
-                        if data and "tests" in data:
-                            for test in data["tests"]:
-                                if "rule_name" in test:
-                                    tested_rules.add(test["rule_name"])
-                except Exception:
-                    continue
-    return tested_rules
 
 def run_audit(rules_dir: str, tests_dir: str):
-    """Reports missing test coverage."""
-    rules_map = discover_rules(rules_dir)
-    tested_rules = discover_tests(tests_dir)
-    
-    all_defined_rules = set()
-    for rules in rules_map.values():
-        all_defined_rules.update(rules)
-        
-    missing = all_defined_rules - tested_rules
-    
-    print(f"--- Coverage Audit ---")
-    print(f"Total Rules Defined: {len(all_defined_rules)}")
-    print(f"Total Rules Tested:  {len(tested_rules)}")
-    if not all_defined_rules:
-        print("No rules found; coverage is not applicable.")
-        return
-    print(f"Coverage:           {((len(all_defined_rules) - len(missing)) / len(all_defined_rules) * 100):.1f}%")
-    
-    if missing:
-        print("\n[!] Rules Missing Coverage:")
-        for fpath, rules in rules_map.items():
-            file_missing = rules & missing
-            if file_missing:
-                print(f"  {fpath}:")
-                for r in sorted(file_missing):
-                    print(f"    - {r}")
-    else:
-        print("\n[OK] 100% test coverage achieved!")
+    rules_dir = os.path.abspath(rules_dir)
+    defined, errors = parse_all_rules(rules_dir)
+    for path, error in errors:
+        print(f"[FAIL] {path}: {error}")
+    if errors or not defined:
+        if not defined:
+            print("[FAIL] No rules found")
+        return 1
+    if not os.path.isdir(tests_dir):
+        print(f"[FAIL] Tests directory not found: {tests_dir}")
+        return 1
+    try:
+        cases = load_test_cases(tests_dir)
+        tested = set()
+        cache = {}
+        for case in cases:
+            path = os.path.abspath(os.path.join(rules_dir, case["_rule_file"]))
+            if path not in cache:
+                cache[path] = load_rules_from_file(path, rules_dir)
+            if case["rule_name"] not in cache[path]:
+                raise ValueError(f"{case['_source_yaml']}: unknown rule {case['rule_name']} in {path}")
+            if "decision_answers" in case:
+                raise ValueError(f"{case['_source_yaml']}: decision_answers is unsupported")
+            tested.add((path, case["rule_name"]))
+    except (OSError, yaml.YAMLError, NovaParserError, ValueError, TypeError) as error:
+        print(f"[FAIL] Invalid test coverage: {error}")
+        return 1
+    expected = {(os.path.abspath(path), rule.name) for path, rule in defined}
+    missing = expected - tested
+    covered = len(expected) - len(missing)
+    print(f"Rules with runnable cases: {covered}/{len(expected)} ({covered / len(expected):.1%})")
+    for path, name in sorted(missing):
+        print(f"[FAIL] Missing tests: {os.path.relpath(path, rules_dir)} -> {name}")
+    if not missing:
+        print("[OK] Every rule has runnable cases; coverage does not establish passing results.")
+    return 1 if missing else 0
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Nova Rules Coverage Auditor")
-    parser.add_argument("--rules-dir", default=".", help="Directory containing .nov files")
-    parser.add_argument("--tests-dir", default="tests", help="Directory containing YAML tests")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rules-dir", default=".")
+    parser.add_argument("--tests-dir", default="tests")
     args = parser.parse_args()
-    
-    run_audit(args.rules_dir, args.tests_dir)
+    sys.exit(run_audit(args.rules_dir, args.tests_dir))

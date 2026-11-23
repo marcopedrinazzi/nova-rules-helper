@@ -70,9 +70,9 @@ def create_nov_file(name, category, description, author, severity, output_dir, d
     semantics:
         $intent1 = "describe the specific malicious intent to detect" (THRESHOLD)
 
-    // Add llm section only if keywords and semantics cannot cover the detection.
+    // Evidence-only paths need distinct facts; models can assess, confirm, or provide fallback.
     // Use a precise yes/no question, not a broad topic check. Set model temperature deliberately.
-    // See SKILL.md Best Practices > LLM As Last Resort for guidance.
+    // See references/rules.md > Detection design for guidance.
 
     condition:
         keywords.$keyword1 and semantics.$intent1
@@ -85,8 +85,8 @@ def create_nov_file(name, category, description, author, severity, output_dir, d
             "score": f"How directly does text request this behavior: {description}?",
         }
         declaration = DECISION_TEMPLATES[decision].replace("QUESTION", json.dumps(questions[decision]))
-        content = content[:content.index("    keywords:")] + "    llm:\n" + declaration + "\n\n    condition:\n        llm.$check\n}\n"
-    with open(fpath, "w") as f:
+        content = content[:content.index("    keywords:")] + "    // Standalone assessment; add evidence only for confirmation or an independent fallback.\n    llm:\n" + declaration + "\n\n    condition:\n        llm.$check\n}\n"
+    with open(fpath, "x") as f:
         f.write(content)
     print(f"Created rule template: {fpath}")
     return fpath, filename
@@ -99,17 +99,21 @@ def create_test_file(name, rule_filename, output_dir):
 tests:
   - name: "{name} - positive match"
     rule_name: "{name}"
-    prompt: "An example malicious prompt that triggers the rule"
+    prompts:
+      - "Replace with a direct attack that should trigger the rule"
+      - "Replace with an attack paraphrase that should trigger the rule"
+      - "Replace with another attack variation that should trigger the rule"
     expected_match: true
 
   - name: "{name} - negative/benign"
     rule_name: "{name}"
     prompts:
-      - "What is the weather like today?"
-      - "How do I make a chocolate cake?"
+      - "Replace with a benign quotation of the attack using its vocabulary"
+      - "Replace with documentation explaining the attack using its vocabulary"
+      - "Replace with a defensive warning discussing the attack using its vocabulary"
     expected_match: false
 """
-    with open(fpath, "w") as f:
+    with open(fpath, "x") as f:
         f.write(content)
     print(f"Created test template: {fpath}")
     return fpath
@@ -128,6 +132,13 @@ if __name__ == "__main__":
                         help="Generate a starter rule with decision model questions under llm: and prompt tests")
     args = parser.parse_args()
     
+    # Check both outputs before creating either file.
+    destinations = [os.path.join(args.rules_dir, pascal_to_snake(args.name) + ".nov"),
+                    os.path.join(args.tests_dir, pascal_to_snake(args.name) + "_tests.yaml")]
+    for destination in destinations:
+        if os.path.lexists(destination):
+            parser.error(f"Refusing to overwrite existing file: {destination}")
+
     # Ensure directories exist
     os.makedirs(args.rules_dir, exist_ok=True)
     os.makedirs(args.tests_dir, exist_ok=True)

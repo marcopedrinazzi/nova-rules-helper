@@ -29,7 +29,6 @@ LLM provider with `--llm-provider`.
 
 import os
 import sys
-import re
 import copy
 import argparse
 import json
@@ -64,20 +63,6 @@ def get_semantic_evaluator() -> DefaultSemanticEvaluator:
     return _semantic_evaluator
 
 
-def needs_llm(rule: NovaRule) -> bool:
-    """Check if a rule's condition requires LLM evaluation to ever match."""
-    if rule.decision:
-        return bool(rule.llms)
-    condition = rule.condition.lower()
-    if "llm." in condition or re.search(r"\b(?:any|all|\d+)\s+of\s+llm\b", condition):
-        return True
-    for match in re.finditer(r"\$([a-zA-Z0-9_]+)", condition):
-        var_name = "$" + match.group(1)
-        if var_name in (rule.llms or {}):
-            return True
-    return False
-
-
 def load_test_cases(tests_dir: str) -> List[Dict[str, Any]]:
     """
     Load all YAML test case files from tests_dir.
@@ -98,7 +83,7 @@ def load_test_cases(tests_dir: str) -> List[Dict[str, Any]]:
                 if not isinstance(data, dict):
                     raise ValueError(f"{fpath}: test file must be a mapping")
                 if "tests" not in data:
-                    continue
+                    raise ValueError(f"{fpath}: missing mandatory tests field")
                 if not isinstance(data["tests"], list):
                     raise ValueError(f"{fpath}: tests must be a list")
 
@@ -107,22 +92,25 @@ def load_test_cases(tests_dir: str) -> List[Dict[str, Any]]:
                 for tc in data["tests"]:
                     if not isinstance(tc, dict):
                         raise ValueError(f"{fpath}: each test must be a mapping")
+                    for field in ("name", "rule_name"):
+                        if not isinstance(tc.get(field), str) or not tc[field].strip():
+                            raise ValueError(f"{fpath}: {field} must be a nonempty string")
+                    if not isinstance(rule_file, str) or not rule_file.strip():
+                        raise ValueError(f"{fpath}: rule_file must be a nonempty string")
+                    if "expected_match" not in tc or (tc["expected_match"] is not None and type(tc["expected_match"]) is not bool):
+                        raise ValueError(f"{fpath}: expected_match must be true, false, or null")
+                    if ("prompt" in tc) == ("prompts" in tc):
+                        raise ValueError(f"{fpath}: provide exactly one of prompt or prompts")
+                    inputs = tc.get("prompts") if "prompts" in tc else [tc["prompt"]]
+                    if not isinstance(inputs, list) or not inputs or any(not isinstance(value, str) or not value.strip() for value in inputs):
+                        raise ValueError(f"{fpath}: prompts must contain nonempty strings")
                     tc["_source_yaml"] = fpath
                     tc["_rule_file"] = rule_file
-
-                    # Detect conflict before expansion
-                    if tc.get("prompt") and tc.get("prompts"):
-                        tc["_has_conflict"] = True
 
                     # Expand multi-prompt test cases
                     prompts = tc.get("prompts")
                     if prompts and isinstance(prompts, list):
                         base_name = tc.get("name")
-                        if not base_name:
-                            # We'll catch the missing name in the run loop
-                            test_cases.append(tc)
-                            continue
-
                         for i, prompt in enumerate(prompts, 1):
                             expanded = copy.deepcopy(tc)
                             expanded["prompt"] = prompt
@@ -180,7 +168,6 @@ def run_test(
         A tuple containing the test status ("pass", "fail", or "skip") and a
         detailed message about the test result.
     """
-    rule_needs_llm = needs_llm(rule)
     if expected_match is not None and type(expected_match) is not bool:
         return "fail", "expected_match must be true, false, or null (incomplete)"
     if isinstance(decision_config, DecisionConfig):
@@ -198,14 +185,26 @@ def run_test(
     )
     try:
         result = matcher.check_prompt(prompt, decision_state=decision_state)
-        actual_match = result["matched"]
         causes = []
     except NovaEvaluationError as error:
-        result, actual_match, causes = error.result, None, error.causes
-        if not resolved_config.enabled and "disabled" in causes:
-            return "skip", "condition requires Decision evaluation (run with --decision-testing)"
-        if set(causes) == {"llm_unavailable"} and not llm_evaluator:
-            return "skip", "condition requires LLM evaluation (run with --llm-testing)"
+        result, causes = error.result, error.causes
+
+    warnings = result.get("debug", {}).get("evaluation_warnings", [])
+    if warnings and "evaluation_complete" not in result:
+        if all(("no " in warning and "evaluator is available" in warning) or "skipped LLM evaluation" in warning for warning in warnings):
+            return "skip", "; ".join(warnings)
+        causes = causes or warnings
+    actual_match = result["matched"]
+    if causes or result.get("evaluation_complete") is False:
+        actual_match = None
+        causes = causes or [entry.rsplit(": ", 1)[-1] for entry in result.get("unresolved", [])]
+        if causes and set(causes) <= {
+            "disabled", "skipped", "llm_not_configured", "llm_unavailable", "semantics_not_configured",
+        }:
+            return "skip", (
+                f"required checks were not run ({','.join(sorted(set(causes)))}); "
+                "enable/configure their evaluators with --decision-testing or --llm-testing"
+            )
 
     # Build detail string with all available scores
     detail = f"matched={actual_match}, expected={expected_match}"
@@ -228,16 +227,6 @@ def run_test(
 
     if actual_match == expected_match:
         return "pass", detail
-
-    # Mismatch: expected True but got False, rule needs LLM, and no LLM evaluator provided
-    if (
-        expected_match
-        and actual_match is False
-        and rule_needs_llm
-        and not rule.decision
-        and not llm_evaluator
-    ):
-        return "skip", "condition requires LLM evaluation (run with --llm-testing)"
 
     return "fail", detail
 
@@ -285,12 +274,12 @@ def run(
     options.update({key: value for key, value in (("provider", decision_provider), ("model", decision_model),
                                                  ("host", decision_host)) if value is not None})
     try:
-        if config and decision_testing:
+        if config:
             get_config(config)
         decision_config = DecisionConfig.resolve(options) if decision_testing else DecisionConfig()
         decision_evaluator = create_decision_evaluator(decision_config) if decision_testing else None
-    except (ValueError, TypeError) as error:
-        print_fail(f"Invalid Decision configuration: {error}")
+    except (OSError, ValueError, TypeError) as error:
+        print_fail(f"Invalid configuration: {error}")
         return 1, {"passed": 0, "failed": 1, "skipped": 0}
     rules_dir = os.path.abspath(rules_dir)
     tests_dir = os.path.abspath(tests_dir)
@@ -319,8 +308,8 @@ def run(
         print_fail(f"Cannot load test cases: {error}")
         return 1, {"passed": 0, "failed": 1, "skipped": 0}
     if not test_cases:
-        print_warn("No YAML test case files found")
-        return 0, {"passed": 0, "failed": 0, "skipped": 0}
+        print_fail("No runnable YAML test cases found")
+        return 1, {"passed": 0, "failed": 1, "skipped": 0}
 
     print_header(f"Rule Testing: {len(test_cases)} test case(s)")
 
@@ -358,11 +347,6 @@ def run(
             print_fail(f"{test_name}: missing mandatory 'prompt' field")
             failed += 1
             continue
-
-        if tc.get("_has_conflict"):
-             print_fail(f"{test_name}: both 'prompt' and 'prompts' defined. Choose only one.")
-             failed += 1
-             continue
 
         if "expected_match" not in tc or (expected_match is not None and type(expected_match) is not bool):
             print_fail(f"{test_name}: expected_match must be present and be true, false, or null")

@@ -5,254 +5,67 @@ description: Create, refine, validate, and test Nova Framework detection rules (
 
 # Nova Rules Helper
 
-This skill helps you create, validate, and test Nova rules based on official standards. In addition to syntax and metadata correctness, it emphasizes high-trust rule design: detect malicious intent rather than risky topics, require enough evidence to justify a match, and minimize false positives in enterprise, educational, and defensive contexts.
+Create, refine, validate, and test focused Nova detections. Detect harmful behavior rather than topic mentions, and check realistic benign look-alikes before handover.
 
-## Script-First Rule
+## Use the packaged tools
 
-Use the prepackaged scripts in this skill before attempting ad-hoc shell commands, handwritten one-off code, or manual file scaffolding.
+Use the bundled generator, validators, and runner when they cover the task. Edit rule logic and test content directly; explain any fallback to custom tooling. Generate a UUID with `scripts/generate_uuid.py` once for each new rule, preserve it across revisions, and never assign it to a different rule.
 
-- Prefer `scripts/create_rule.py` to hand-creating starter rule/test files.
-- Prefer `scripts/generate_uuid.py` for every UUID instead of inventing or reusing one.
-- Prefer the validation and test scripts in `scripts/validation/` and `scripts/tests/` instead of improvised checks.
-- Use direct manual edits only for the actual rule logic, test content, or small glue changes that the scripts are not designed to generate.
+## Workflow
 
-If a packaged script exists for the task, treat it as the default path and explain any deviation briefly.
+### 1. Locate the rules and check the environment
 
-## Prerequisites
-
-This skill requires a `nova-hunting` build supporting typed questions under `llm:` and `yamllint`, including when running tests for rules without typed questions. Use the environment checker to verify your setup:
+Find the target `nova-rules` repository using `CATEGORIES.md` or existing `.nov` files in the current directory, siblings, or parents. Pass its path to the tools. This skill requires a `nova-hunting` build supporting typed questions under `llm:`, even for tests without typed questions, plus `yamllint`.
 
 ```bash
 python3 scripts/check_env.py
 ```
 
-## Workflow
+### 2. Define one behavior
 
-### 0. Discovery (Agent Only)
-Before starting any task, the agent must locate the `nova-rules` repository root by searching for `CATEGORIES.md` or existing `.nov` files in the current directory, siblings, or parents. All subsequent commands must use the identified path.
+Write down the harmful action, its target, and benign prompts that could resemble it. Complete: "This rule fires when the input [one clear behavior]." If the rule covers distinct attack families, split it. Apply this check during refinement too.
 
-### 1. Define the Abuse Behavior Before Writing the Rule
-Before creating or editing a rule, write down:
-- The exact harmful action being requested.
-- The target of that action.
-- The benign prompts that could look similar.
+### 3. Generate and refine the rule
 
-The rule should detect behavior, not subject matter. For example:
-- Weak: `"credential rule"`
-- Strong: `"requests to reveal, print, share, or retrieve passwords, tokens, API keys, or secrets"`
-
-If the idea is too broad, split it before authoring. Prefer one focused attack family per rule, such as:
-- credential disclosure
-- system prompt leakage
-- ignore or override prior instructions
-- explicit jailbreak modes
-
-### 1b. One-Line Complexity Gate
-Before writing or editing any rule, you must be able to complete this sentence in plain English:
-
-> "This rule fires when the input **[one clear behavior]**."
-
-If the sentence needs "and also" or covers more than one distinct attack family, **stop and split** into separate rules. If you cannot state the detection goal in one line, the rule is too complex to implement cleanly — simplify or decompose it first.
-
-This gate applies at every stage: initial design, refinement, and final review. A rule that passes validation but fails this test is not ready.
-
-### 2. Research & Authoring
-- Identify the concrete threat or pattern you want to detect.
-- Do not scaffold a new rule manually when the packaged generator can do it.
-- Use the **rule creator** to generate a tailored starting point. Specify the target directory if not in the repo root:
-  ```bash
-  python3 scripts/create_rule.py "MyNewRule" --category "prompt_manipulation/jailbreak" --rules-dir <repo_path> --tests-dir <repo_path>/tests
-  ```
-
-Use `--decision noul`, `--decision choice`, or `--decision score` to generate a starter with typed questions under `llm:` with YAML prompt tests. Refine its question, criteria, and inputs for the intended behavior.
-
-### 3. Rule Refinement
-- Edit the generated `.nov` file.
-- **Mandatory UUID**: ALWAYS use `scripts/generate_uuid.py` for all UUID fields.
-- Review [rules.md](references/rules.md) for syntax/metadata requirements.
-- Detection sections are optional: include only those the rule needs or that the author explicitly specifies.
-- Consult [CATEGORIES.md](references/CATEGORIES.md) for the official taxonomy.
-- If a rule is curated from PromptIntel, set optional `promptintel_url` to the source feed item URL. Keep `reference` for external research, reports, or examples instead of provenance.
-- Start with explicit lexical evidence for the risky behavior.
-- Use keywords or regex first when the attacker behavior is plainly visible in text.
-- Add semantics only where you need paraphrase coverage or softer coercive phrasing.
-- Do not allow one weak signal to decide the whole match for noisy categories like credential theft, jailbreaks, prompt injection, or malicious intent.
-- Prefer evidence combinations such as:
-  - action plus sensitive target
-  - coercion verb plus instruction or system target
-  - harmful instruction plus harmful activity target
-
-Recommended shapes:
-
-```nova
-condition:
-    (keywords.$reveal or semantics.$credential_disclosure)
-    and
-    (keywords.$api_key or keywords.$password or keywords.$token)
+```bash
+python3 scripts/create_rule.py MyNewRule --category prompt_manipulation/jailbreak \
+  --rules-dir <repo_path> --tests-dir <repo_path>/tests
 ```
 
-```nova
-condition:
-    keywords.$ignore_previous
-    or
-    (semantics.$override_intent and keywords.$instructions)
-```
+Use `--decision noul`, `--decision choice`, or `--decision score` for a typed model starter. It starts standalone; refine the question and condition for the intended role. Replace all scaffold evidence and test prompts before evaluation.
 
-For detailed guidance on semantics, LLM usage, decision models, thresholds, and prompt writing, see **Best Practices** below.
+Read the relevant parts of [rules.md](references/rules.md):
 
-### 3b. Decision Models in `llm:`
+- [Structure](references/rules.md#rule-structure), [metadata](references/rules.md#metadata-requirements), and [rule requirements](references/rules.md#rule-requirements) for valid files. Choose the most specific category in [CATEGORIES.md](references/CATEGORIES.md).
+- [Detection design](references/rules.md#detection-design) for evidence and prompt design.
+- [Model roles](references/rules.md#model-roles-and-conditions) to choose standalone, confirmation, or independent fallback. Do not impose a keyword gate automatically.
+- [Decision questions](references/rules.md#decision-model-questions) when using typed constructs; choose only the answer types the detection needs.
+- [Threshold guidelines](references/rules.md#threshold-guidelines) for semantic, quoted LLM, and typed decision settings.
 
-`llm:` contains quoted questions evaluated by LLMs and `noul`, `choice`, and `score` questions evaluated by decision models. Use unique variable names and `llm.$name` references for both forms. Choose the type that matches the answer needed: `noul` for yes/no, `choice` for unordered categories, or `score` for a described spectrum. Use multiple questions for distinct judgments the rule needs; using all three types is not a default requirement.
+### 4. Write representative YAML cases
 
-- Keep one detection goal and write clear questions and criteria that distinguish active requests from benign discussion.
-- Put thresholds and category selections in declarations; combine predicates in `condition:`.
-- Treat unresolved required checks as incomplete assessments, not nonmatches.
+Use the [test format](references/rules.md#test-format) and [local false-positive controls](references/rules.md#local-false-positive-controls). Exercise every matching path and likely paraphrases, including benign enterprise, defensive, educational, translation, and summarization contexts where relevant.
 
-See the [Decision model questions in rules.md](references/rules.md#decision-model-questions) for syntax, authoring guidance, and examples.
+For context-dependent questions, provide `decision_state` and test the same action under different approved tasks. The application owns validation of required context. See [Decision model tests](references/rules.md#decision-model-tests) for context, expected outcomes, and provider options.
 
-### 4. Test Enhancement & Coverage
-- Add test cases to the YAML file in the `tests/` directory.
-- Cover both obvious attacks and likely paraphrases.
-- Add negative tests for benign enterprise, security, educational, translation, and summarization prompts that discuss the topic without expressing abuse.
-- Supply `decision_state` for context-dependent questions. Include the same action under different approved tasks; the application owns validation of required context.
-- Set `expected_match` to `true` or `false` for a completed outcome, or `null` for an expected incomplete assessment. Never count an incomplete result as a nonmatch.
-- Enable typed model evaluation with `--decision-testing` and select the provider/model. Use `--llm-testing` for quoted checks; enable both for mixed rules. Required checks are skipped when their evaluator is disabled.
-- See [Decision model tests](references/rules.md#decision-model-tests) for the YAML format and runner options.
-- **Audit Coverage**: Identify gaps in the repository:
-  ```bash
-  python3 scripts/audit_coverage.py --rules-dir <repo_path> --tests-dir <repo_path>/tests
-  ```
-
-### 5. Validation & Linting
-Ensure the rule meets quality standards. Do not substitute ad-hoc validation when these packaged scripts cover the task. Run:
+### 5. Validate and audit coverage
 
 ```bash
 python3 scripts/validation/validate_syntax.py --rules-dir <repo_path> -v
 python3 scripts/validation/validate_metadata.py --rules-dir <repo_path> -v
 python3 scripts/validation/lint_rules.py --rules-dir <repo_path> -v
 python3 scripts/validation/validate_tests.py --tests-dir <repo_path>/tests
+python3 scripts/audit_coverage.py --rules-dir <repo_path> --tests-dir <repo_path>/tests
 ```
 
-### 6. Functional Testing
-Run the packaged functional test suite to ensure your rule triggers correctly:
+### 6. Run functional tests
+
 ```bash
 python3 scripts/tests/test_rules.py --rules-dir <repo_path> --tests-dir <repo_path>/tests -v
 ```
 
-Use `--decision-testing` to evaluate prompts with a Decision model. Required
-Decision checks are skipped when it is disabled. Live model failures fail boolean
-expectations; `expected_match: null` explicitly expects an incomplete assessment.
-Use `-v` to inspect returned scores, confidence, and unresolved reasons.
+Enable `--decision-testing` for typed questions and `--llm-testing` for quoted checks; configure the provider/model for each and enable both for mixed rules. Required disabled checks are skipped, so a successful exit alone does not prove they were evaluated. Inspect verbose results and resolve gaps before handover.
 
-### 7. Final Rule Review
-Before considering the work complete, verify:
-- The rule detects abuse, not just a risky topic.
-- The condition requires enough evidence for a confident match.
-- The rule still passes the **One-Line Complexity Gate** (step 1b) — if you cannot complete "This rule fires when the input **[one clear behavior]**" in a single sentence, split the rule.
-- The rule would survive benign enterprise and defensive prompts.
-- The rule is narrow enough to avoid false positives; if not, split it into smaller rules.
+### 7. Review and hand over
 
-## Helper Scripts
-(Located in the skill's `scripts/` directory)
-- `scripts/audit_coverage.py`: Compares `.nov` rules vs. YAML tests.
-- `scripts/check_env.py`: Verifies dependencies.
-- `scripts/create_rule.py`: Generates tailored rule/test templates.
-- `scripts/generate_uuid.py`: Mandatory tool for fresh UUIDs.
-
-## Core Validation Scripts (Prepackaged Official Tools)
-- `scripts/validation/validate_syntax.py`
-- `scripts/validation/validate_metadata.py`
-- `scripts/validation/lint_rules.py`
-- `scripts/validation/validate_tests.py` (New: YAML Linting for tests)
-- `scripts/tests/test_rules.py`
-
-## Best Practices
-- **Script-First Workflow**:
-  - Always check the skill's `scripts/` directory before inventing a new workflow.
-  - If a bundled script covers the task, use it.
-  - Only fall back to custom commands or handwritten helper code when no packaged script fits, and state that choice explicitly.
-- **UUIDs**: Never reuse a UUID. Always generate a fresh one via `scripts/generate_uuid.py`.
-- **Repo Context**: Always pass the correct repository path to `--rules-dir` if not running from the root.
-- **Naming**:
-  - **Internal Rule Name**: Always use **PascalCase** (e.g., `SuspiciousInjection`).
-  - **Filename**: Should be **snake_case** (e.g., `suspicious_injection.nov`), which is automatically handled by the generator.
-- **Behavior Over Topic**:
-  - Do not match because a prompt mentions passwords, jailbreaks, system prompts, malware, or API keys.
-  - Match because the prompt expresses abuse such as revealing a secret, leaking a system prompt, ignoring instructions, or helping with malware creation.
-- **Keywords First**:
-  - Prefer keywords for direct disclosure requests, direct prompt injection phrases, explicit bypass language, and exact risky mode names like `DAN` or `developer mode`.
-  - Use explicit keyword references (e.g., `keywords.$reveal and keywords.$api_key`) when the condition requires specific evidence combinations. Use `any of keywords.*` only when every defined keyword is independently sufficient to indicate the behavior — this is rare for noisy categories.
-  - Avoid heavy regex as it may impact performance scanning.
-- **Semantics As Support**:
-  - Use semantics to cover paraphrases and softer wording, not as a catch-all for broad detections.
-  - Avoid short, vague semantic texts that describe a topic instead of malicious intent.
-  - Do not use broad semantic-only rules for categories like jailbreaks, credentials, or malicious intent.
-  - Start most semantic thresholds around `0.40` to `0.45` unless benchmark evidence justifies something else.
-  - If a semantic description could also match a benign security article, it is too broad to stand alone.
-- **LLM As Last Resort**:
-  - Quoted LLM checks add model latency and cost. Use them when keywords and semantics cannot express the required detection logic.
-  - Before reaching for `llm`, verify that the check cannot be achieved with a keyword pattern, a semantic description, or a combination of both.
-  - Nova evaluates keywords and semantics before model checks. For rules with typed questions, decision model questions run before quoted LLM checks. Checks are skipped when other evidence already determines the condition; rearranging branches does not change this stage order.
-  - The parenthesized value in a quoted LLM check is model temperature, not a match threshold. Typed `noul` and `score` questions put their match thresholds inside the declaration.
-  - Frame `llm` prompts as a precise yes/no question about the input's intent, not a broad topic check. Tell the LLM what to focus on and what should not trigger the check.
-  - Keep prompts concise — longer prompts cost more tokens without necessarily improving accuracy.
-  - Avoid vague questions like "Is this malicious?" — instead ask about the specific mechanism, such as "Does this input embed hidden instructions inside quoted content intended to override the model's behavior?"
-- **Evidence Combinations**:
-  - For noisy categories, require multiple pieces of evidence instead of one weak signal.
-  - Common high-signal pairings are action plus target, coercion plus instruction target, or harmful instruction plus harmful activity.
-- **Rule Integrity**:
-  - Use the most specific subcategory from `CATEGORIES.md`.
-  - Ensure all mandatory metadata fields are present and valid.
-  - Use `promptintel_url` only for PromptIntel feed-item provenance; do not overload `reference` with source-feed tracking.
-  - Avoid overloaded conditions that try to cover multiple attack families at once.
-  - If a condition fails the **One-Line Complexity Gate** (step 1b), split the rule before proceeding.
-- **General Rule Info**:
-  - keywords is the less expensive in term of resources
-  - Semantic is second but could lead to false positive
-  - LLM is usually the most reliable but more expensive
-  - Typed questions under `llm:` use decision models; Nova applies rule thresholds to their returned answers. Calibrate these thresholds for the selected model and task.
-- **Test Design**:
-  - Provide both positive (should match) and negative (should not match) test cases for every rule.
-  - Use the `prompts` list in YAML to test multiple variations of an attack in a single test block.
-  - Ensure `rule_name` in the test YAML matches the `rule` name in the `.nov` file exactly.
-  - Negative cases should include benign security guidance, policy writing, awareness content, documentation, translation, and summarization where relevant.
-- **YAML Linting**:
-  - Always run `scripts/validation/validate_tests.py` when creating or modifying test cases.
-  - Ensure all YAML files follow the project's formatting rules defined in `assets/.yamllint`.
-
-## Category Guidance
-
-### Credential Request
-- Require disclosure, retrieval, leak, print, reveal, or sharing intent.
-- Require a sensitive target such as password, API key, token, private key, credential, or secret.
-- Do not match prompts that only discuss secure storage, policy, or awareness content.
-
-### System Override
-- Require coercion verbs such as ignore, override, forget, disregard, or replace.
-- Require an instruction target such as rules, instructions, policies, guardrails, or system prompt.
-- Split broad rules into separate behaviors when needed:
-  - ignore or override prior instructions
-  - reveal system prompt
-  - output replacement or answer-only coercion
-
-### Jailbreak Attempt
-- Keep strong direct phrases such as `DAN`, `developer mode`, `god mode`, or `unrestricted mode`.
-- For softer phrasing, require bypass framing rather than matching roleplay or persona language alone.
-- Do not match harmless roleplay, creative writing, or defensive analysis of jailbreaks.
-
-### Malicious Intent
-- Require harmful instruction plus harmful activity.
-- Favor concrete malicious actions such as steal, evade, deploy, create malware, or bypass detection.
-- Do not match defensive explanations, educational material, or generic vulnerability discussion by themselves.
-
-## Review Checklist
-- **One-Line Gate**: Can you complete "This rule fires when the input **[___]**" in one sentence? If not, split.
-- Does the rule detect abuse, or only a topic?
-- Does the rule require enough evidence?
-- Could a benign enterprise or security prompt satisfy this condition?
-- Are the semantic patterns describing malicious intent rather than subject matter?
-- Is the rule trying to do too many jobs?
-- Should the risky branches be split into smaller rules?
-- Is the rule precise enough to avoid false positives, or should it be split?
-- For Decision rules, are the primitive, scale, match categories, context requirements, and unresolved outcomes documented and checked?
-
+Report the rules and cases evaluated, model settings, failures, skips, and unresolved outcomes. Claim readiness only when the local false-positive checks pass; incomplete assessments are not nonmatches.

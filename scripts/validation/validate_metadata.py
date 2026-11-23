@@ -8,6 +8,7 @@ import os
 import sys
 import re
 import argparse
+from datetime import date
 import uuid as uuid_module
 from typing import Dict, Any, List, Tuple
 
@@ -83,7 +84,10 @@ def validate_category(value: str) -> bool:
 
 def validate_date(value: str) -> bool:
     """Validate date format (YYYY-MM-DD)."""
-    return bool(DATE_PATTERN.match(value))
+    try:
+        return bool(DATE_PATTERN.fullmatch(value)) and date.fromisoformat(value) is not None
+    except ValueError:
+        return False
 
 
 def validate_rule_metadata(
@@ -134,6 +138,13 @@ def validate_rule_metadata(
         if not validate_date(str(meta["date"])):
             errors.append(f"Invalid date format: '{meta['date']}'. Use YYYY-MM-DD.")
 
+    if "modified" in meta and not validate_date(str(meta["modified"])):
+        errors.append("Invalid modified date. Use YYYY-MM-DD.")
+    if "version" in meta and not re.fullmatch(
+        r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?",
+        str(meta["version"]),
+    ):
+        errors.append("Invalid semantic version. Use MAJOR.MINOR.PATCH with optional prerelease/build identifiers.")
     return errors, warnings
 
 
