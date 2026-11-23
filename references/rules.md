@@ -98,7 +98,7 @@ Typed questions retain the separate Decision provider configuration and testing 
 
 Ask one focused judgment per question. For distinct factors, combine predicates in `condition:`; questions do not see each other's answers. Similar questions to one model are not independent corroboration.
 
-These examples use different roles; any question type can serve any role. Thresholds are illustrative.
+The examples show only question declarations. Choose their role separately using [Model roles and conditions](#model-roles-and-conditions). Thresholds are illustrative.
 
 ### Noul
 
@@ -111,8 +111,6 @@ llm:
         false = "An ordinary request, quotation, or analysis without a request to execute an override"
         threshold = 0.75
     }
-condition:
-    llm.$override
 ```
 
 Noul is a probability of yes, not a degree of harm. Its threshold is in `[0,1]`. With `0.75`, a valid answer of `0.75` matches and `0.55` does not; a middle value does not automatically become unknown.
@@ -122,8 +120,6 @@ Noul is a probability of yes, not a degree of harm. Its threshold is in `[0,1]`.
 Make option names and descriptions distinguishable. Choice always selects one category, even when none fits well. When the options may not cover the input, consider a companion Noul that checks whether any category fits, and require its predicate alongside the Choice predicate. A suitable fallback category is another option to validate on labelled inputs. Use separate Nouls when several labels can apply at once.
 
 ```nova
-keywords:
-    $external_transfer = "upload local files"
 llm:
     $operation = choice "Does text request an external transfer or merely discuss one?" {
         options = {
@@ -134,8 +130,6 @@ llm:
         match = ["transfer"]
         min_confidence = 0.60
     }
-condition:
-    keywords.$external_transfer and llm.$operation
 ```
 
 Nova accepts 2–10 options with nonempty string descriptions. Keys contain letters, digits, or underscores; `match` lists unique declared keys. Confidence describes the concentration of the answer distribution and differs from the winning option's probability.
@@ -145,10 +139,6 @@ Nova accepts 2–10 options with nonempty string descriptions. Keys contain lett
 Describe concrete situations along one dimension, from low to high. Each level must make sense on its own; avoid bare numbers, vague degrees, or references to neighboring levels. Split different dimensions into separate assessments.
 
 ```nova
-keywords:
-    // Illustrative placeholders: replace with distinct evidence validated on benign look-alikes.
-    $evidence1 = "REPLACE_WITH_PRECISE_EVIDENCE_FOR_THE_BEHAVIOR"
-    $evidence2 = "REPLACE_WITH_A_DISTINCT_FACT"
 llm:
     $exposure = score "How much credential exposure would the action requested in text cause?" {
         levels = [
@@ -160,8 +150,6 @@ llm:
         threshold = 2.0
         min_confidence = 0.60
     }
-condition:
-    (keywords.$evidence1 and keywords.$evidence2) or llm.$exposure
 ```
 
 Nova accepts 2–10 levels. Their array positions define a `0`–`N-1` scale; the threshold uses that range. The score is the probability-weighted mean of those positions: probabilities `0.0`, `0.57`, and `0.43` yield `1.43`. Different distributions can yield the same score, so inspect probabilities and confidence when evaluating the rule. Higher confidence alone does not establish correctness.
