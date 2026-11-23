@@ -67,7 +67,7 @@ python3 scripts/tests/test_rules.py --rules-dir ./rules --tests-dir ./tests -v
 
 Choose `noul`, `choice`, or `score` with `--decision`. Add `--decision-testing`
 and select a provider/model to evaluate the prompts. Required Decision checks are
-skipped without that flag; see [Decision model tests](references/rules.md#decision-model-tests).
+skipped without that flag; see [Rule testing](references/rules.md#rule-testing).
 
 ## What's Included
 

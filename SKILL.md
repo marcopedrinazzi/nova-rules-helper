@@ -44,9 +44,9 @@ Read the relevant parts of [rules.md](references/rules.md):
 
 ### 4. Write representative YAML cases
 
-Use the [test format](references/rules.md#test-format) and [local false-positive controls](references/rules.md#local-false-positive-controls). Exercise every matching path and likely paraphrases, including benign enterprise, defensive, educational, translation, and summarization contexts where relevant.
+Use the [test format](references/rules.md#rule-testing) and [local false-positive controls](references/rules.md#local-false-positive-controls). Exercise every matching path and likely paraphrases, including benign enterprise, defensive, educational, translation, and summarization contexts where relevant.
 
-For context-dependent questions, provide `decision_state` and test the same action under different approved tasks. The application owns validation of required context. See [Decision model tests](references/rules.md#decision-model-tests) for context, expected outcomes, and provider options.
+For context-dependent questions, provide `decision_state` and test the same action under different approved tasks. The application owns validation of required context. See [Rule testing](references/rules.md#rule-testing) for context, expected outcomes, and provider options.
 
 ### 5. Validate and audit coverage
 

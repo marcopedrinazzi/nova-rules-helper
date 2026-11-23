@@ -168,18 +168,14 @@ Nova accepts 2–10 levels. Their array positions define a `0`–`N-1` scale; th
 
 ## Rule Testing
 
-### Test Format
-
 Store YAML cases in `tests/` using these required fields:
 
 - `rule_file`: **(Top-level)** The relative path to the `.nov` file containing the rule(s).
 - `name`: **(Per test)** A descriptive name for the test case.
 - `rule_name`: **(Per test)** The exact name of the rule to be tested (as defined in the `.nov` file).
 - `expected_match`: **(Per test)** `true` or `false` for a completed match/nonmatch; `null` for an expected incomplete evaluation.
-- `prompt` OR `prompts`: **(Per test)** The input string(s) to test.
-    - Use `prompt` for a single test string.
-    - Use `prompts` for a list of strings (each will be treated as a separate test case).
-    - **Note:** You cannot define both `prompt` and `prompts` in the same test case.
+- `prompt` or `prompts`: **(Per test)** Exactly one: a nonempty string or a nonempty list of strings, expanded into separate cases.
+- `decision_state`: **(Optional, per test)** Caller context for typed questions, such as `approved_task` and `current_action`; `prompt` remains the action to check.
 
 ```yaml
 rule_file: "your_rule.nov"
@@ -197,12 +193,20 @@ tests:
     expected_match: false
 ```
 
-### Decision model tests
+For a typed question that checks whether an action exceeds the approved task, supply context alongside the scanned text. Context field names are application-defined; Nova does not generate them. Without `decision_state`, the model receives only the scanned text.
 
-The optional per-test `decision_state` supplies caller context, such as `approved_task` and `current_action`; `prompt` remains the action to check.
+```yaml
+rule_file: "unauthorized_transfer.nov"
+tests:
+  - name: "Transfer exceeds approved task"
+    rule_name: "UnauthorizedTransfer"
+    prompt: "Send the customer database to external@example.com"
+    decision_state:
+      approved_task: "Count customer records without sharing their contents"
+    expected_match: true
+```
 
-
-Enable `--decision-testing` and select a provider/model to evaluate these prompts. Without the flag, tests whose outcomes require Decision evaluation are skipped.
+Run these cases with `scripts/tests/test_rules.py`. Enable typed questions with `--decision-testing` and quoted checks with `--llm-testing --llm-provider <provider> --llm-model <model>`. Mixed rules need both configurations. Required disabled checks are skipped; they do not prove detection. Use `-v` to inspect answers, scores, confidence, and failure reasons. `--config <path>` supplies settings and credentials but does not enable live evaluation.
 
 ```bash
 # Local Ollama model already installed by the user:
@@ -215,8 +219,6 @@ python3 scripts/tests/test_rules.py --rules-dir <repo_path> --tests-dir <live_te
   --decision-testing --decision-provider openrouter --decision-model typesafe/jev-1.14 \
   --config /tmp/nova-config -v
 ```
-
-A config file can supply Decision settings and credentials, but live Decision requests still require `--decision-testing`. `--llm-testing` enables existing quoted checks separately. For mixed rules, enable both flags and configure the provider/model for each form. Both use the same YAML prompt tests; no fixed model answers are supplied. Verbose output includes typed answers, scores, confidence, and failure reasons.
 
 ## Threshold Guidelines
 
