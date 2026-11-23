@@ -189,9 +189,10 @@ def run_test(
     except NovaEvaluationError as error:
         result, causes = error.result, error.causes
 
+    _SKIP_PATTERNS = ("no ", "evaluator is available", "skipped", "not configured", "not available")
     warnings = result.get("debug", {}).get("evaluation_warnings", [])
     if warnings and "evaluation_complete" not in result:
-        if all(("no " in warning and "evaluator is available" in warning) or "skipped LLM evaluation" in warning for warning in warnings):
+        if all(any(pattern in warning.lower() for pattern in _SKIP_PATTERNS) for warning in warnings):
             return "skip", "; ".join(warnings)
         causes = causes or warnings
     actual_match = result["matched"]

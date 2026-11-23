@@ -52,9 +52,13 @@ def run(tests_dir: str, config_path: str = None, **kwargs) -> Tuple[int, Dict[st
     else:
         print_fail("YAML linting errors found:")
         print(output)
-        # Simple heuristic to count errors/warnings from output
-        error_count = output.count("error")
-        warn_count = output.count("warning")
+        error_count = 0
+        warn_count = 0
+        for line in output.splitlines():
+            if "  [error]" in line:
+                error_count += 1
+            elif "  [warning]" in line:
+                warn_count += 1
         print_summary(0, error_count, warn_count)
         return 1, {"errors": error_count, "warnings": warn_count}
 

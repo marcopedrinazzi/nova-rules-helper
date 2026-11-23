@@ -89,6 +89,8 @@ The `llm:` section supports two forms:
 - **LLM checks:** A question written as a quoted string, such as `$check = "Does the input request an instruction override?" (0.5)`.
 - **Decision model checks:** A `noul`, `choice`, or `score` declaration. The decision model answers the question, and Nova converts the answer into a true/false predicate using the declaration settings.
 
+Both forms share the `llm:` section because they serve the same role in a rule: a model-based predicate that evaluates the scanned text. The difference is in the answer structure. An LLM check asks a free-form question and interprets the model's confidence as a score; it suits judgments where the boundary is a single yes/no impression and the model's own phrasing matters. A decision model check (`noul`, `choice`, `score`) sends a structured question with declared answer categories or levels; it suits judgments where the answer space is defined in advance and the rule needs typed probabilities rather than a raw confidence score. When the question is naturally binary and a probability threshold is the right decision boundary, use `noul`. When the question maps to distinct categories, use `choice`. When the answer sits on a described spectrum, use `score`. When none of these structures fit — for example, the question requires open-ended reasoning or the answer categories cannot be enumerated — use an LLM check.
+
 Conditions reference either form as `llm.$name`; quantifiers such as `all of llm` include both. Variable names must be unique across all declarations in the section.
 
 Decision model checks use their own provider configuration and testing options below. LLM checks use separate LLM provider settings; their parenthesized value is temperature.
