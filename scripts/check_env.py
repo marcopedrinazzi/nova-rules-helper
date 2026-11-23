@@ -15,9 +15,9 @@ def check_decision_support():
         from nova.core.decision import NovaEvaluationError
         from nova.evaluators.decision.config import DecisionConfig
     except ImportError as error:
-        print(f"[MISSING] Nova decision model questions under llm:: {error}")
+        print(f"[MISSING] Nova decision model checks under llm:: {error}")
         return False
-    print("[OK] Nova decision model questions under llm:")
+    print("[OK] Nova decision model checks under llm:")
     return True
 
 def check_command(command_name):
@@ -46,7 +46,7 @@ def run_checks():
             missing.append(pkg)
             
     if not check_decision_support():
-        missing.append("Nova decision model questions under llm:")
+        missing.append("Nova decision model checks under llm:")
 
     for cmd in required_cmds:
         if check_command(cmd):

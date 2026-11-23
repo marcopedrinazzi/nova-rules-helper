@@ -129,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--tests-dir", default="tests", help="Directory to save .yaml file")
     
     parser.add_argument("--decision", choices=["noul", "choice", "score"],
-                        help="Generate a starter rule with decision model questions under llm: and prompt tests")
+                        help="Generate a starter rule with decision model checks under llm: and prompt tests")
     args = parser.parse_args()
     
     # Check both outputs before creating either file.

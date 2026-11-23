@@ -6,7 +6,7 @@ An **LLM Agent Skill** that provides expert-level assistance for authoring, vali
 
 The **nova-rules-helper** equips your LLM agent with the tools and context needed to be your primary assistant in detection engineering for Nova rules:
 
-- **Intelligent Rule Authoring**: Helps you draft Nova rules using keywords, semantics, LLM checks, and decision models through typed questions under `llm:`.
+- **Intelligent Rule Authoring**: Helps you draft Nova rules using keywords, semantics, LLM checks, and decision model checks under `llm:`.
 - **Validation & Quality Control**: Automatically checks your work for syntax errors, metadata gaps (UUIDs, severity), and taxonomy alignment.
 - **YAML Test Linting**: Ensures all YAML test cases are correctly formatted and follow the project's style guide using `yamllint`.
 - **Coverage Auditing**: Identifies rules without runnable YAML cases and validates their rule file/name references. This checks test presence; run the functional tests to verify outcomes.
@@ -26,7 +26,7 @@ pip install -r requirements.txt
 cp -r . ~/.gemini/skills/nova-rules-helper
 ```
 
-Use a `nova-hunting` build supporting typed questions under `llm:`. Run `python3 scripts/check_env.py` to verify compatibility before using the helpers.
+Use a `nova-hunting` build supporting decision model checks under `llm:`. Run `python3 scripts/check_env.py` to verify compatibility before using the helpers.
 
 ## Usage
 
@@ -66,14 +66,14 @@ python3 scripts/tests/test_rules.py --rules-dir ./rules --tests-dir ./tests -v
 ```
 
 Choose `noul`, `choice`, or `score` with `--decision`. Add `--decision-testing`
-and select a provider/model to evaluate the prompts. Required Decision checks are
+and select a provider/model to evaluate the prompts. Required decision model checks are
 skipped without that flag; see [Rule testing](references/rules.md#rule-testing).
 
 ## What's Included
 
 The skill embeds authoritative Nova standards directly into the agent's context:
 
-1. **[Nova Rules Guide](references/rules.md)** — A guide to Nova rules, including quoted checks and typed questions under `llm:`.
+1. **[Nova Rules Guide](references/rules.md)** — A guide to Nova rules, including LLM checks (quoted questions) and decision model checks (`noul`, `choice`, and `score`) under `llm:`.
 2. **[Nova Rules Categories](references/CATEGORIES.md)** — This document defines the four main categories and their subcategories for Nova rules, based on the [official Nova taxonomy](https://promptintel.novahunting.ai/taxonomy)
 3. **Helper Suite** — Python scripts for automated syntax checking, metadata validation, YAML linting, and coverage auditing
 

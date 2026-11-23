@@ -11,8 +11,8 @@ directory. Each test case defines a prompt and an expected outcome (i.e., whethe
 a rule should match or not). The script then runs the Nova matching engine against
 each prompt and compares the actual outcome with the expected one.
 
-Decision tests evaluate prompts through a live model only with --decision-testing.
-Required Decision checks are otherwise skipped. Optional decision_state supplies
+Decision model checks evaluate prompts through a live model only with --decision-testing.
+Required decision model checks are otherwise skipped. Optional decision_state supplies
 caller context; expected_match: null expects an incomplete live evaluation.
 
 The test runner also supports:
@@ -421,7 +421,7 @@ def main():
     )
     parser.add_argument(
         "--llm-testing", action="store_true",
-        help="Enable LLM-based evaluation for tests that require it"
+        help="Enable LLM checks (quoted questions) for tests that require them"
     )
     parser.add_argument(
         "--llm-provider", type=str, default=None,
@@ -432,7 +432,7 @@ def main():
         "--llm-model", type=str, default=None,
         help="Specify the model name for the LLM provider"
     )
-    parser.add_argument("--decision-testing", action="store_true", help="Enable live Decision evaluation of test prompts")
+    parser.add_argument("--decision-testing", action="store_true", help="Enable live decision model checks (noul, choice, score)")
     parser.add_argument("--decision-provider", choices=["openrouter", "ollama"], help="Decision provider")
     parser.add_argument("--decision-model", help="Decision model ID (required for Ollama)")
     parser.add_argument("--decision-host", help="Ollama Decision server URL")
