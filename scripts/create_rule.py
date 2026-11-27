@@ -71,7 +71,7 @@ def create_nov_file(name, category, description, author, severity, output_dir, d
         $intent1 = "describe the specific malicious intent to detect" (THRESHOLD)
 
     // Evidence-only paths need distinct facts; models can assess, confirm, or provide fallback.
-    // Use a precise yes/no question, not a broad topic check. Set model temperature deliberately.
+    // Ask a focused yes/no question. Tune the LLM confidence threshold using labelled examples.
     // See references/rules.md > Detection design for guidance.
 
     condition:

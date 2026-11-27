@@ -59,7 +59,7 @@ Every model question must reject benign quotation, documentation, tests, analysi
 ## Local false-positive controls
 
 - Test at least three attacks and three benign look-alikes using similar vocabulary. Exercise each condition path separately, including semantic-only candidates and model-only fallback matches where applicable.
-- Require no wrong results in those cases; report skipped, failed, or unresolved checks. Inspect near-threshold semantic and decision model results and add regression cases for weaknesses found. Temperature is not a confidence cutoff.
+- Require no wrong results in those cases; report skipped, failed, or unresolved checks. Inspect results near the semantic, LLM confidence, and decision model thresholds and add regression cases for weaknesses found.
 - Rerun after every edit, including metadata. Local results establish behavior only on the supplied inputs.
 
 ## Metadata Requirements
@@ -93,7 +93,7 @@ Both forms share the `llm:` section because they serve the same role in a rule: 
 
 Conditions reference either form as `llm.$name`; quantifiers such as `all of llm` include both. Variable names must be unique across all declarations in the section.
 
-Decision model checks use their own provider configuration and testing options below. LLM checks use separate LLM provider settings; their parenthesized value is temperature.
+Decision model checks and LLM checks use separate provider settings and testing options. In a quoted LLM check, the parenthesized value declares the confidence threshold for a match.
 
 | Primitive | Use for | Required settings | Match rule |
 | --- | --- | --- | --- |
@@ -225,7 +225,7 @@ python3 scripts/tests/test_rules.py --rules-dir <repo_path> --tests-dir <live_te
 
 ## Threshold Guidelines
 
-Semantic thresholds (0.0–1.0) determine the sensitivity of `semantics` matches. Start semantic thresholds around `0.40`–`0.45` unless labelled tests justify a different value. The parenthesized value in an LLM check is model temperature, not a match threshold. Decision model checks use their declaration settings.
+Semantic thresholds (0.0–1.0) determine the sensitivity of `semantics` matches. Start semantic thresholds around `0.40`–`0.45` unless labelled tests justify a different value. For a quoted LLM check, the parenthesized value is the minimum confidence from `0.0` to `1.0` required for a positive answer to match. Decision model checks use their declaration settings.
 
 *   **Recall (0.1–0.3)**: More matches, higher risk of false positives. Best for broad patterns.
 *   **Precision (0.7–0.9)**: Stricter matching, lower risk of false positives. Best for specific behaviors.
